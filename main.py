@@ -34,7 +34,7 @@ def process_video(video_file, args):
     print(f"Processing {video_file} on GPU {gpu_id}")
     video_path = os.path.join(args.root_dir, video_file)
     model = CNNVideoFrameClassifier(args.width, args.height)
-    model.load_state_dict(torch.load('best_model.pth', map_location=f'cuda'))
+    model.load_state_dict(torch.load('best_model.pth', map_location=f'cuda', weights_only=True))
     run_inference(model, video_path, args.output_dir, args.width, args.height, args.batch_size, 0)
     print(f"Finished processing {video_file}")
 
