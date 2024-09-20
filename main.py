@@ -4,6 +4,7 @@ import time
 import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from inference import *
+import torch
 
 def get_gpu_memory_map():
     result = subprocess.check_output(
@@ -16,21 +17,8 @@ def get_gpu_memory_map():
     gpu_memory = [int(x) for x in result.strip().split('\n')]
     return gpu_memory
 
-def set_available_gpu():
-    try:
-        gpu_memory_map = get_gpu_memory_map()
-        if gpu_memory_map:
-            # Select the GPU with the most free memory
-            selected_gpu = gpu_memory_map.index(max(gpu_memory_map))
-            os.environ["CUDA_VISIBLE_DEVICES"] = str(selected_gpu)
-            return selected_gpu
-        else:
-            print("No GPUs available")
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        print("nvidia-smi is not available. Make sure CUDA is installed and you have NVIDIA GPUs.")
-            
-def process_video(video_file, args):
-    gpu_id = set_available_gpu()
+def process_video(video_file, args, gpu_id):
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
     print(f"Processing {video_file} on GPU {gpu_id}")
     video_path = os.path.join(args.root_dir, video_file)
     model = CNNVideoFrameClassifier(args.width, args.height)
@@ -48,10 +36,13 @@ def main(args):
     else:
         print(f"Found {len(video_files)} video files.")
 
-    with ProcessPoolExecutor(max_workers=12) as executor:
+    total_workers = len(args.gpu_ids) * args.workers_per_gpu
+
+    with ProcessPoolExecutor(max_workers=total_workers) as executor:
         futures = []
-        for video_file in video_files:
-            future = executor.submit(process_video, video_file, args)
+        for i, video_file in enumerate(video_files):
+            gpu_id = args.gpu_ids[i % len(args.gpu_ids)]
+            future = executor.submit(process_video, video_file, args, gpu_id)
             futures.append(future)
             time.sleep(10)
 
@@ -68,5 +59,7 @@ if __name__ == "__main__":
     parser.add_argument("--width", type=int, default=WIDTH, help="Frame width for model input")
     parser.add_argument("--height", type=int, default=HEIGHT, help="Frame height for model input")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for inference")
+    parser.add_argument("--gpu_ids", nargs='+', type=int, default=[0, 1, 2, 3], help="List of GPU IDs to use")
+    parser.add_argument("--workers_per_gpu", type=int, default=1, help="Number of workers per GPU")
     args = parser.parse_args()
     main(args)
